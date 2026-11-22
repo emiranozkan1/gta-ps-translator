@@ -6,6 +6,19 @@ Hem **Windows** hem de **macOS** ile %100 uyumludur.
 
 ---
 
+## ⚡ Hızlı Kurulum (Windows - Tek Tıkla Kurulum Sihirbazı)
+
+Windows bilgisayarınızda **Python yüklü olmasa bile** hiçbir şeyle uğraşmanıza gerek yoktur:
+
+1. Repoyu indirin (**Code -> Download ZIP**) ve bir klasöre çıkartın.
+2. Klasördeki **`Kurulum_Sihirbazi.bat`** dosyasına çift tıklayın.
+   * Bu sihirbaz bilgisayarınızda Python yoksa resmi 64-bit Python'ı otomatik indirip kurar, PATH ayarını yapar.
+   * Gerekli tüm yapay zeka ve OCR kütüphanelerini yükler.
+   * Masaüstünüze **"GTA 6 Canlı Çevirici"** kısayolunu otomatik ekler!
+3. Artık oyunu her açtığınızda masaüstündeki kısayola tıklamanız yeterlidir.
+
+---
+
 ## 🚀 Özellikler
 
 - **Çift Yapay Zeka Motoru:**
@@ -15,28 +28,6 @@ Hem **Windows** hem de **macOS** ile %100 uyumludur.
 - **Dinamik Bölge Seçimi:** Ekrana gelen kırmızı kutuyu PS Remote Play altyazı alanına sürükleyip bırakmanız yeterlidir.
 - **Oyun İçi HUD / Şeffaf Arayüz:** Oyunun üzerinde yarı saydam, sarı renkli GTA tarzı yüksek kontrastlı altyazı gösterir.
 - **Akıllı Filtreleme:** Aynı metni tekrar tekrar çevirmez, sessizlik olduğunda altyazıyı otomatik temizler.
-
----
-
-## 🛠️ Kurulum
-
-### Windows (Ana Bilgisayar):
-1. Python'ın kurulu olduğundan emin olun ([python.org](https://www.python.org/) üzerinden indirirken *"Add Python to PATH"* kutucuğunu işaretleyin).
-2. Proje dizininde komut istemcisini (CMD veya PowerShell) açın:
-   ```cmd
-   pip install -r requirements.txt
-   ```
-3. Başlatmak için `baslat_windows.bat` dosyasına çift tıklayın veya:
-   ```cmd
-   python gta_ceviri.py
-   ```
-
-### macOS:
-1. Terminali açın:
-   ```bash
-   pip3 install -r requirements.txt
-   python3 gta_ceviri.py
-   ```
 
 ---
 

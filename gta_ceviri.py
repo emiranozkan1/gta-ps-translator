@@ -1,7 +1,24 @@
+import os
+import sys
+import json
+import subprocess
+import site
+import importlib
 import time
 import threading
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+# macOS ve Linux üzerinde ~/.local izin hatalarını (PermissionError) önlemek için:
+# Model ve veri dizinlerini doğrudan proje klasörüne yönlendiriyoruz
+BASE_DIR = Path(__file__).resolve().parent
+MODELS_DATA_DIR = BASE_DIR / "models_data"
+MODELS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+os.environ["XDG_DATA_HOME"] = str(MODELS_DATA_DIR / "share")
+os.environ["XDG_CONFIG_HOME"] = str(MODELS_DATA_DIR / "config")
+os.environ["XDG_CACHE_HOME"] = str(MODELS_DATA_DIR / "cache")
 
 # Gerekli Temel Paketler:
 # pip3 install mss deep-translator rapidocr_onnxruntime Pillow numpy
@@ -12,15 +29,15 @@ class GameSubtitleTranslator:
     def __init__(self, root):
         self.root = root
         self.root.title("GTA 6 / PS Remote Play - Yapay Zeka Çevirici")
-        self.root.geometry("480x420")
+        self.root.geometry("490x490")
         self.root.attributes("-topmost", True)
 
         self.is_running = False
         self.last_detected_text = ""
         self.last_seen_time = 0
 
-        # Varsayılan Altyazı Koordinatları (Kullanıcı değiştirebilir)
-        self.roi = {"top": 750, "left": 350, "width": 800, "height": 110}
+        # Koordinatları yükle (Kullanıcı önceden kaydettiyse hatırlar)
+        self.load_settings()
 
         # Çeviri Motoru: "google" veya "local_argos"
         self.engine_choice = tk.StringVar(value="local_argos")
@@ -29,6 +46,29 @@ class GameSubtitleTranslator:
         self.setup_ui()
         # Arka planda yerel modelin kurulu olup olmadığını kontrol et
         threading.Thread(target=self.check_local_model, daemon=True).start()
+
+    def load_settings(self):
+        self.roi = {"top": 750, "left": 350, "width": 800, "height": 110}
+        self.overlay_pos = {"top": 870, "left": 350, "width": 800, "height": 70}
+        config_file = BASE_DIR / "config.json"
+        if config_file.exists():
+            try:
+                with open(config_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if "roi" in data:
+                        self.roi.update(data["roi"])
+                    if "overlay_pos" in data:
+                        self.overlay_pos.update(data["overlay_pos"])
+            except Exception:
+                pass
+
+    def save_settings(self):
+        config_file = BASE_DIR / "config.json"
+        try:
+            with open(config_file, "w", encoding="utf-8") as f:
+                json.dump({"roi": self.roi, "overlay_pos": self.overlay_pos}, f, indent=4)
+        except Exception:
+            pass
 
     def setup_ui(self):
         frame = ttk.Frame(self.root, padding=15)
@@ -45,9 +85,23 @@ class GameSubtitleTranslator:
         )
         lbl_desc.pack(pady=2)
 
-        # 1. Altyazı Bölgesi Butonu
-        btn_box = ttk.Button(frame, text="🎯 1. Altyazı Alanını Ayarla (Kutuyu Yerleştir)", command=self.open_roi_selector)
-        btn_box.pack(fill=tk.X, pady=8)
+        # 1. Konum Ayarları Grubu
+        area_frame = ttk.LabelFrame(frame, text="Ekran & Konum Ayarları", padding=8)
+        area_frame.pack(fill=tk.X, pady=6)
+
+        btn_roi = ttk.Button(
+            area_frame, 
+            text="🎯 1. Oyun Altyazı Okuma Alanı (Kırmızı Kutu)", 
+            command=self.open_roi_selector
+        )
+        btn_roi.pack(fill=tk.X, pady=2)
+
+        btn_overlay = ttk.Button(
+            area_frame, 
+            text="💬 2. Çeviri Yazı Konumunu Ayarla (Mavi Kutu)", 
+            command=self.open_overlay_selector
+        )
+        btn_overlay.pack(fill=tk.X, pady=2)
 
         # Motor Seçimi Grubu
         engine_frame = ttk.LabelFrame(frame, text="Çeviri Yapay Zekası", padding=10)
@@ -76,8 +130,8 @@ class GameSubtitleTranslator:
         )
         self.btn_download_model.pack(fill=tk.X, pady=4)
 
-        # 2. Başlat / Durdur
-        self.btn_toggle = ttk.Button(frame, text="▶️ 2. Canlı Çeviriyi Başlat", command=self.toggle_translation)
+        # 3. Başlat / Durdur
+        self.btn_toggle = ttk.Button(frame, text="▶️ 3. Canlı Çeviriyi Başlat", command=self.toggle_translation)
         self.btn_toggle.pack(fill=tk.X, pady=8)
 
         # Durum Çubuğu
@@ -95,6 +149,69 @@ class GameSubtitleTranslator:
         )
         lbl_tip.pack(pady=4)
 
+    def _install_pip_package(self, package_name):
+        """Kullanıcının terminale girmesine gerek kalmadan arka planda pip paketini otomatik kurar."""
+        cmds = [
+            [sys.executable, "-m", "pip", "install", package_name],
+            [sys.executable, "-m", "pip", "install", "--user", package_name],
+            [sys.executable, "-m", "pip", "install", "--break-system-packages", package_name]
+        ]
+        
+        for cmd in cmds:
+            try:
+                proc = subprocess.run(
+                    cmd, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE, 
+                    text=True, 
+                    timeout=300
+                )
+                if proc.returncode == 0:
+                    try:
+                        site.main()
+                        user_site = site.getusersitepackages()
+                        if user_site and user_site not in sys.path:
+                            sys.path.insert(0, user_site)
+                        importlib.invalidate_caches()
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def ensure_core_dependencies(self):
+        """Temel çeviri paketlerini (OCR, ekran yakalama vs.) kontrol eder, eksik varsa otomatik kurar."""
+        missing = []
+        checks = [
+            ("mss", "mss"),
+            ("deep_translator", "deep-translator"),
+            ("rapidocr_onnxruntime", "rapidocr-onnxruntime"),
+            ("PIL", "Pillow"),
+            ("numpy", "numpy")
+        ]
+        for mod, pkg in checks:
+            try:
+                __import__(mod)
+            except ImportError:
+                missing.append(pkg)
+
+        if not missing:
+            return True
+
+        self.status_var.set(f"Durum: Gerekli paketler otomatik yükleniyor: {', '.join(missing)}...")
+        for pkg in missing:
+            self._install_pip_package(pkg)
+
+        # Tekrar kontrol et
+        still_missing = []
+        for mod, pkg in checks:
+            try:
+                __import__(mod)
+            except ImportError:
+                still_missing.append(pkg)
+        return len(still_missing) == 0
+
     def check_local_model(self):
         try:
             import argostranslate.package
@@ -108,25 +225,48 @@ class GameSubtitleTranslator:
                 self.root.after(0, lambda: self.status_var.set("Durum: Açık kaynak yerel model hazır."))
             else:
                 self.local_model_ready = False
-        except ImportError:
+        except Exception:
             self.local_model_ready = False
 
     def start_download_local_model(self):
         threading.Thread(target=self._download_local_model_thread, daemon=True).start()
 
     def _download_local_model_thread(self):
+        self.root.after(0, lambda: self.btn_download_model.config(text="⏳ Hazırlanıyor...", state=tk.DISABLED))
+        self.root.after(0, lambda: self.status_var.set("Durum: Paket kontrol ediliyor..."))
+
+        # 1. argostranslate kütüphanesi kurulu mu? Değilse arka planda otomatik kur
         try:
             import argostranslate.package
             import argostranslate.translate
         except ImportError:
-            self.root.after(0, lambda: messagebox.showerror(
-                "Eksik Paket", 
-                "Lütfen Terminalde şu komutu çalıştır:\npip3 install argostranslate"
-            ))
-            return
+            self.root.after(0, lambda: self.btn_download_model.config(text="⏳ Yapay Zeka Paketi Kuruluyor...", state=tk.DISABLED))
+            self.root.after(0, lambda: self.status_var.set("Durum: argostranslate kütüphanesi otomatik kuruluyor (Lütfen bekleyin)..."))
 
+            success = self._install_pip_package("argostranslate")
+            if not success:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Otomatik Kurulum Hatası", 
+                    "argostranslate paketi otomatik kurulamadı.\nLütfen internet bağlantınızı kontrol edip tekrar deneyin."
+                ))
+                self.root.after(0, lambda: self.btn_download_model.config(text="📥 Yerel Modeli İndir (~150 MB - Tek Seferlik)", state=tk.NORMAL))
+                self.root.after(0, lambda: self.status_var.set("Hata: Kütüphane kurulumu başarısız."))
+                return
+
+            try:
+                import argostranslate.package
+                import argostranslate.translate
+            except ImportError:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Yeniden Başlatma Gerekli", 
+                    "Paket başarıyla kuruldu! Değişikliğin algılanması için lütfen uygulamayı bir kez kapatıp tekrar açın."
+                ))
+                self.root.after(0, lambda: self.btn_download_model.config(text="Uygulamayı Yeniden Başlatın", state=tk.NORMAL))
+                return
+
+        # 2. Model dosyasını indir ve kur
         self.root.after(0, lambda: self.btn_download_model.config(text="⏳ Model İndiriliyor... (~150 MB)", state=tk.DISABLED))
-        self.root.after(0, lambda: self.status_var.set("Durum: Açık kaynak çeviri modeli indiriliyor..."))
+        self.root.after(0, lambda: self.status_var.set("Durum: Açık kaynak çeviri modeli indiriliyor (~150 MB)..."))
 
         try:
             argostranslate.package.update_package_index()
@@ -136,14 +276,20 @@ class GameSubtitleTranslator:
                 download_path = pkg.download()
                 argostranslate.package.install_from_path(download_path)
                 self.local_model_ready = True
-                self.root.after(0, lambda: self.btn_download_model.config(text="✅ Model Başarıyla Kuruldu", state=tk.DISABLED))
+                self.root.after(0, lambda: self.btn_download_model.config(text="✅ Yerel Model Yüklü & Hazır", state=tk.DISABLED))
                 self.root.after(0, lambda: self.status_var.set("Durum: Yerel model hazır! Çeviriyi başlatabilirsin."))
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Tebrikler!",
+                    "Açık kaynak yerel yapay zeka çeviri modeli başarıyla kuruldu!\nArtık '2. Canlı Çeviriyi Başlat' butonuna basarak tamamen çevrimdışı oynayabilirsiniz."
+                ))
             else:
                 self.root.after(0, lambda: self.status_var.set("Hata: en->tr dil paketi bulunamadı."))
                 self.root.after(0, lambda: self.btn_download_model.config(text="Tekrar Dene", state=tk.NORMAL))
+                self.root.after(0, lambda: messagebox.showerror("Hata", "Argos sunucusunda İngilizce->Türkçe dil paketi bulunamadı."))
         except Exception as e:
             self.root.after(0, lambda: self.status_var.set(f"İndirme hatası: {e}"))
             self.root.after(0, lambda: self.btn_download_model.config(text="Tekrar Dene", state=tk.NORMAL))
+            self.root.after(0, lambda: messagebox.showerror("İndirme Hatası", f"Model indirilirken bir hata oluştu:\n{e}"))
 
     def open_roi_selector(self):
         self.selector_win = tk.Toplevel(self.root)
@@ -167,13 +313,50 @@ class GameSubtitleTranslator:
             self.roi["top"] = self.selector_win.winfo_y()
             self.roi["width"] = self.selector_win.winfo_width()
             self.roi["height"] = self.selector_win.winfo_height()
-            self.status_var.set(f"Alan Kaydedildi: {self.roi['width']}x{self.roi['height']}")
+            self.save_settings()
+            self.status_var.set(f"Okuma Alanı Kaydedildi: {self.roi['width']}x{self.roi['height']}")
             self.selector_win.destroy()
 
         self.selector_win.protocol("WM_DELETE_WINDOW", save_and_close)
 
+    def open_overlay_selector(self):
+        self.overlay_selector_win = tk.Toplevel(self.root)
+        self.overlay_selector_win.title("Çeviri Konumu (Türkçe yazının görünmesini istediğin yere taşı)")
+        self.overlay_selector_win.geometry(f"{self.overlay_pos['width']}x{self.overlay_pos['height']}+{self.overlay_pos['left']}+{self.overlay_pos['top']}")
+        self.overlay_selector_win.attributes("-alpha", 0.60)
+        self.overlay_selector_win.attributes("-topmost", True)
+        self.overlay_selector_win.config(bg="#0066ff")
+
+        lbl = tk.Label(
+            self.overlay_selector_win, 
+            text="💬 Türkçe Çeviri Altyazısı Bu Kutunun İçinde Görünecektir.\nBu mavi kutuyu ekranda istediğin yere sürükle ve boyutlandır.\nİşin bitince bu pencereyi kapat.", 
+            fg="white", 
+            bg="#0066ff", 
+            font=("Helvetica", 11, "bold")
+        )
+        lbl.pack(expand=True)
+
+        def save_and_close():
+            self.overlay_pos["left"] = self.overlay_selector_win.winfo_x()
+            self.overlay_pos["top"] = self.overlay_selector_win.winfo_y()
+            self.overlay_pos["width"] = self.overlay_selector_win.winfo_width()
+            self.overlay_pos["height"] = self.overlay_selector_win.winfo_height()
+            self.save_settings()
+            self.status_var.set(f"Çeviri Konumu Kaydedildi: {self.overlay_pos['width']}x{self.overlay_pos['height']}")
+            self.overlay_selector_win.destroy()
+
+        self.overlay_selector_win.protocol("WM_DELETE_WINDOW", save_and_close)
+
     def toggle_translation(self):
         if not self.is_running:
+            # Temel paketler hazır mı kontrol et
+            if not self.ensure_core_dependencies():
+                messagebox.showerror(
+                    "Eksik Paketler", 
+                    "Temel çeviri paketleri yüklenemedi. Lütfen internet bağlantınızı kontrol edip tekrar deneyin."
+                )
+                return
+
             # Yerel model seçilmiş ama indirilmemişse uyar
             if self.engine_choice.get() == "local_argos" and not self.local_model_ready:
                 res = messagebox.askyesno(
@@ -194,7 +377,7 @@ class GameSubtitleTranslator:
             threading.Thread(target=self.translation_loop, daemon=True).start()
         else:
             self.is_running = False
-            self.btn_toggle.config(text="▶️ 2. Canlı Çeviriyi Başlat")
+            self.btn_toggle.config(text="▶️ 3. Canlı Çeviriyi Başlat")
             self.status_var.set("Durum: Durduruldu")
             if hasattr(self, 'overlay') and self.overlay:
                 self.overlay.destroy()
@@ -205,12 +388,12 @@ class GameSubtitleTranslator:
         self.overlay.attributes("-topmost", True)
         self.overlay.attributes("-alpha", 0.90)
 
-        overlay_y = max(20, self.roi["top"] - 75)
-        overlay_w = max(self.roi['width'], 650)
-        self.overlay.geometry(f"{overlay_w}x70+{self.roi['left']}+{overlay_y}")
+        overlay_w = self.overlay_pos['width']
+        overlay_h = self.overlay_pos['height']
+        self.overlay.geometry(f"{overlay_w}x{overlay_h}+{self.overlay_pos['left']}+{self.overlay_pos['top']}")
         self.overlay.config(bg="#111111")
 
-        self.sub_text = tk.StringVar(value="[GTA Canlı Çeviri Aktif - Konuşma Bekleniyor]")
+        self.sub_text = tk.StringVar(value="")
         self.sub_label = tk.Label(
             self.overlay, 
             textvariable=self.sub_text, 
@@ -221,6 +404,19 @@ class GameSubtitleTranslator:
             justify=tk.CENTER
         )
         self.sub_label.pack(expand=True, fill=tk.BOTH, padx=10, pady=5)
+
+        # Başlangıçta gizle: Ekranda konuşma/yazı yokken siyah kutu görünmemeli!
+        self.overlay.withdraw()
+
+    def _show_subtitle(self, text):
+        if hasattr(self, 'overlay') and self.overlay and self.is_running:
+            self.sub_text.set(text)
+            self.overlay.deiconify()
+
+    def _hide_subtitle(self):
+        if hasattr(self, 'overlay') and self.overlay:
+            self.sub_text.set("")
+            self.overlay.withdraw()
 
     def translation_loop(self):
         import mss
@@ -277,13 +473,13 @@ class GameSubtitleTranslator:
                                     translated = argos_trans.translate(detected_text)
                                 else:
                                     translated = google_trans.translate(detected_text)
-                                self.sub_text.set(translated)
+                                self.root.after(0, lambda t=translated: self._show_subtitle(t))
                             except Exception:
                                 pass
 
-                    # 6 saniye yeni ses/yazı yoksa ekranı temizle
-                    if time.time() - self.last_seen_time > 6 and self.last_detected_text != "":
-                        self.sub_text.set("")
+                    # 3.5 saniye yeni ses/yazı yoksa ekranı temizle ve kutuyu gizle
+                    if time.time() - self.last_seen_time > 3.5 and self.last_detected_text != "":
+                        self.root.after(0, self._hide_subtitle)
                         self.last_detected_text = ""
 
                     time.sleep(0.18)

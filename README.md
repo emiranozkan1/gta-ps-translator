@@ -19,15 +19,22 @@ Windows bilgisayarınızda **Python yüklü olmasa bile** hiçbir şeyle uğraş
 
 ---
 
+## 🍏 Hızlı Başlatma (macOS)
+
+Mac kullanıyorsanız terminalle uğraşmanıza gerek yoktur:
+- Klasördeki **`Baslat_Mac.command`** dosyasına çift tıklayarak uygulamayı başlatabilirsiniz.
+- Eksik paketler veya yapay zeka çeviri modeli varsa program arka planda bunları otomatik olarak kuracaktır.
+
+---
+
 ## 🚀 Özellikler
 
 - **Çift Yapay Zeka Motoru:**
   - 🧠 **Açık Kaynak Yerel Model (CTranslate2 / Argos):** %100 yerel ve çevrimdışı çalışır. İnternet gerektirmez, kota/ücret yoktur.
   - ⚡ **Google NMT:** Sıfır indirme gerektiren anında hazır bulut çevirisi.
 - **Ultra Hızlı OCR (RapidOCR / ONNX):** Ekrandaki altyazıyı 15-20 milisaniyede algılar.
-- **Dinamik Bölge Seçimi:** Ekrana gelen kırmızı kutuyu PS Remote Play altyazı alanına sürükleyip bırakmanız yeterlidir.
-- **Oyun İçi HUD / Şeffaf Arayüz:** Oyunun üzerinde yarı saydam, sarı renkli GTA tarzı yüksek kontrastlı altyazı gösterir.
-- **Akıllı Filtreleme:** Aynı metni tekrar tekrar çevirmez, sessizlik olduğunda altyazıyı otomatik temizler.
+- **Çift Dinamik Bölge Seçimi:** Ekrana gelen kırmızı kutuyu oyunun İngilizce altyazısına, mavi kutuyu ise Türkçe çevirinin çıkmasını istediğiniz konuma sürükleyip bırakabilirsiniz. Konumlar otomatik kaydedilir.
+- **Akıllı Otomatik Gizleme (Oyun Deneyimini Korur):** Ekranda konuşma veya altyazı yokken arayüz tamamen görünmez olur, siyah kutu ekranda kalmaz. Sadece konuşma olduğunda zarifçe belirir ve konuşma bitince 3.5 saniye içinde kaybolur.
 
 ---
 

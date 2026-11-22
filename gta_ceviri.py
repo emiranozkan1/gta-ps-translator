@@ -47,6 +47,8 @@ class GameSubtitleTranslator:
         self.last_detected_text = ""
         self.last_seen_time = 0
         self.current_duration = 3.5
+        self.sentence_buffer = ""
+        self.last_fragment_time = 0
 
         # Koordinatları yükle (Kullanıcı önceden kaydettiyse hatırlar)
         self.load_settings()
@@ -552,6 +554,53 @@ class GameSubtitleTranslator:
         # En az 3.0 saniye, en fazla 7.5 saniye ekranda tut
         return min(max(duration, 3.0), 7.5)
 
+    def _smart_merge_dialogue(self, new_text):
+        """İngilizce ve Türkçe arasındaki dilbilgisel yapı farkını (Özne-Yüklem-Nesne vs. Özne-Nesne-Yüklem)
+        hesaba katarak bölünmüş diyalogları akıllıca birleştirir."""
+        conjunctions = {
+            "and", "but", "or", "because", "so", "if", "when", "that", "which",
+            "who", "where", "while", "though", "although", "to", "for", "with", "without",
+            "as", "since", "until", "before", "after"
+        }
+
+        now = time.time()
+        time_delta = now - self.last_fragment_time if self.last_fragment_time else 999
+        self.last_fragment_time = now
+
+        prev = self.sentence_buffer.strip()
+        curr = new_text.strip()
+
+        # 1. Eğer aradan 3.8 saniyeden fazla zaman geçtiyse eski cümle bitmiş demektir
+        if not prev or time_delta > 3.8:
+            self.sentence_buffer = curr
+            return curr
+
+        # 2. Oyun ekrana parça parça ekleme yapıyorsa (progressive subtitle)
+        if curr.lower().startswith(prev.lower()):
+            self.sentence_buffer = curr
+            return curr
+
+        # 3. Önceki parça nokta, ünlem veya soru işaretiyle bitmemişse (yarım cümle)
+        prev_incomplete = not any(prev.endswith(p) for p in (".", "!", "?", '."', '!"', '?"'))
+
+        # 4. Yeni parça küçük harfle başlıyorsa ya da bağlaç/devam işaretiyle başlıyorsa
+        first_word = curr.split()[0].lower().strip(",.-") if curr.split() else ""
+        curr_is_continuation = curr[0].islower() or (first_word in conjunctions) or curr.startswith("...") or curr.startswith("-")
+
+        if prev_incomplete or curr_is_continuation:
+            # İki parçayı akıcı bir şekilde birleştir
+            merged = prev.rstrip(",-… ") + " " + curr.lstrip("-.… ")
+            # Eğer birleşik cümle artık bittiyse buffer'ı temizle
+            if any(merged.endswith(p) for p in (".", "!", "?", '."', '!"', '?"')):
+                self.sentence_buffer = ""
+            else:
+                self.sentence_buffer = merged
+            return merged
+        else:
+            # Bağımsız yeni bir cümle
+            self.sentence_buffer = curr
+            return curr
+
     def translation_loop(self):
         import mss
         import numpy as np
@@ -601,12 +650,15 @@ class GameSubtitleTranslator:
                             self.last_detected_text = detected_text
                             self.last_seen_time = time.time()
 
+                            # Akıllı dilbilgisi birleştirmesi (İngilizce -> Türkçe cümle yapısı uyumu)
+                            text_to_translate = self._smart_merge_dialogue(detected_text)
+
                             # Çeviri uygula
                             try:
                                 if argos_trans:
-                                    translated = argos_trans.translate(detected_text)
+                                    translated = argos_trans.translate(text_to_translate)
                                 else:
-                                    translated = google_trans.translate(detected_text)
+                                    translated = google_trans.translate(text_to_translate)
                                 # Metin uzunluğuna göre dinamik ekranda kalma süresini belirle
                                 self.current_duration = self._calculate_display_duration(translated)
                                 self.root.after(0, lambda t=translated: self._show_subtitle(t))
@@ -617,6 +669,7 @@ class GameSubtitleTranslator:
                     if time.time() - self.last_seen_time > self.current_duration and self.last_detected_text != "":
                         self.root.after(0, self._hide_subtitle)
                         self.last_detected_text = ""
+                        self.sentence_buffer = ""
 
                     time.sleep(0.18)
 

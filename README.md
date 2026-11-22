@@ -34,7 +34,9 @@ Mac kullanıyorsanız terminalle uğraşmanıza gerek yoktur:
   - ⚡ **Google NMT:** Sıfır indirme gerektiren anında hazır bulut çevirisi.
 - **Ultra Hızlı OCR (RapidOCR / ONNX):** Ekrandaki altyazıyı 15-20 milisaniyede algılar.
 - **Çift Dinamik Bölge Seçimi:** Ekrana gelen kırmızı kutuyu oyunun İngilizce altyazısına, mavi kutuyu ise Türkçe çevirinin çıkmasını istediğiniz konuma sürükleyip bırakabilirsiniz. Konumlar otomatik kaydedilir.
-- **Akıllı Otomatik Gizleme (Oyun Deneyimini Korur):** Ekranda konuşma veya altyazı yokken arayüz tamamen görünmez olur, siyah kutu ekranda kalmaz. Sadece konuşma olduğunda zarifçe belirir ve konuşma bitince 3.5 saniye içinde kaybolur.
+- **Akıllı Dilbilgisi & Cümle Birleştirme (SVO ➔ SOV Uyumu):** İngilizce (Özne-Yüklem-Nesne) ve Türkçe (Özne-Nesne-Yüklem) arasındaki dilbilgisi farkını hesaba katar. Ekrana parça parça gelen yarım cümleleri (virgüllü veya bağlaçlı geçişleri) akıllıca birleştirip tam, anlamlı ve %100 doğal bir Türkçe cümle olarak çevirir.
+- **Dinamik Kutu Boyutu & Okuma Süresi:** Altyazı kutusu metnin uzunluğuna göre dinamik büyür/küçülür. Ekranda kalma süresi de harf sayısına göre otomatik hesaplanır (kısa sözler hızla kalkar, uzun cümleler rahatça okunur).
+- **Akıllı Otomatik Gizleme (Oyun Deneyimini Korur):** Ekranda konuşma veya altyazı yokken arayüz tamamen görünmez olur, siyah kutu ekranda kalmaz. Sadece konuşma olduğunda zarifçe belirir.
 
 ---
 

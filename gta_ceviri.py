@@ -49,7 +49,9 @@ class GameSubtitleTranslator:
 
     def load_settings(self):
         self.roi = {"top": 750, "left": 350, "width": 800, "height": 110}
-        self.overlay_pos = {"top": 870, "left": 350, "width": 800, "height": 70}
+        # Varsayılan olarak Türkçe çeviri konumu doğrudan İngilizce altyazının üstüne yerleşir
+        self.overlay_pos = {"top": 750, "left": 350, "width": 800, "height": 110}
+        self.custom_overlay_set = False
         config_file = BASE_DIR / "config.json"
         if config_file.exists():
             try:
@@ -59,6 +61,7 @@ class GameSubtitleTranslator:
                         self.roi.update(data["roi"])
                     if "overlay_pos" in data:
                         self.overlay_pos.update(data["overlay_pos"])
+                        self.custom_overlay_set = True
             except Exception:
                 pass
 
@@ -313,6 +316,9 @@ class GameSubtitleTranslator:
             self.roi["top"] = self.selector_win.winfo_y()
             self.roi["width"] = self.selector_win.winfo_width()
             self.roi["height"] = self.selector_win.winfo_height()
+            # Kullanıcı özel bir mavi kutu ayarlamadıysa Türkçe altyazı varsayılan olarak İngilizce yazının tam üstüne otursun
+            if not getattr(self, 'custom_overlay_set', False):
+                self.overlay_pos = dict(self.roi)
             self.save_settings()
             self.status_var.set(f"Okuma Alanı Kaydedildi: {self.roi['width']}x{self.roi['height']}")
             self.selector_win.destroy()
@@ -341,11 +347,73 @@ class GameSubtitleTranslator:
             self.overlay_pos["top"] = self.overlay_selector_win.winfo_y()
             self.overlay_pos["width"] = self.overlay_selector_win.winfo_width()
             self.overlay_pos["height"] = self.overlay_selector_win.winfo_height()
+            self.custom_overlay_set = True
             self.save_settings()
             self.status_var.set(f"Çeviri Konumu Kaydedildi: {self.overlay_pos['width']}x{self.overlay_pos['height']}")
             self.overlay_selector_win.destroy()
 
         self.overlay_selector_win.protocol("WM_DELETE_WINDOW", save_and_close)
+
+    def _exclude_window_from_capture(self, window):
+        """macOS ve Windows üzerinde çeviri penceresini ekran yakalamadan gizler.
+        Böylece Türkçe altyazı doğrudan İngilizce altyazının tam üstüne basılsa dahi
+        OCR oyundaki İngilizce altyazıyı kesintisiz okumaya devam edebilir."""
+        try:
+            if sys.platform == "darwin":
+                import ctypes
+                import ctypes.util
+                objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+                objc.objc_getClass.restype = ctypes.c_void_p
+                objc.objc_getClass.argtypes = [ctypes.c_char_p]
+                objc.sel_registerName.restype = ctypes.c_void_p
+                objc.sel_registerName.argtypes = [ctypes.c_char_p]
+                objc.objc_msgSend.restype = ctypes.c_void_p
+
+                NSApplication = objc.objc_getClass(b"NSApplication")
+                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+                sharedApp = objc.objc_msgSend(NSApplication, objc.sel_registerName(b"sharedApplication"))
+                windows = objc.objc_msgSend(sharedApp, objc.sel_registerName(b"windows"))
+
+                count = objc.objc_msgSend(windows, objc.sel_registerName(b"count"))
+                for i in range(count):
+                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+                    w = objc.objc_msgSend(windows, objc.sel_registerName(b"objectAtIndex:"), i)
+                    # 0 = NSWindowSharingNone (ekran yakalamada görünmez)
+                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+                    objc.objc_msgSend(w, objc.sel_registerName(b"setSharingType:"), 0)
+            elif sys.platform == "win32":
+                import ctypes
+                hwnd = window.winfo_id()
+                # WDA_EXCLUDEFROMCAPTURE = 0x00000011 (Windows 10 2004+)
+                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x00000011)
+        except Exception:
+            pass
+
+    def _compute_box_size(self, text, font_obj, max_width=850, pad_x=22, pad_y=10):
+        words = text.split()
+        lines = []
+        current_line = []
+        for word in words:
+            test_line = " ".join(current_line + [word])
+            if font_obj.measure(test_line) <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(" ".join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+                    current_line = []
+        if current_line:
+            lines.append(" ".join(current_line))
+        if not lines:
+            return 0, 0, ""
+
+        wrapped_text = "\n".join(lines)
+        actual_width = max(font_obj.measure(line) for line in lines) + pad_x * 2
+        line_height = font_obj.metrics("linespace")
+        actual_height = (len(lines) * line_height) + pad_y * 2
+        return actual_width, actual_height, wrapped_text
 
     def toggle_translation(self):
         if not self.is_running:
@@ -386,36 +454,58 @@ class GameSubtitleTranslator:
         self.overlay = tk.Toplevel(self.root)
         self.overlay.overrideredirect(True)
         self.overlay.attributes("-topmost", True)
-        self.overlay.attributes("-alpha", 0.90)
-
-        overlay_w = self.overlay_pos['width']
-        overlay_h = self.overlay_pos['height']
-        self.overlay.geometry(f"{overlay_w}x{overlay_h}+{self.overlay_pos['left']}+{self.overlay_pos['top']}")
+        self.overlay.attributes("-alpha", 0.92)
         self.overlay.config(bg="#111111")
 
-        self.sub_text = tk.StringVar(value="")
         self.sub_label = tk.Label(
             self.overlay, 
-            textvariable=self.sub_text, 
+            text="", 
             font=("Helvetica", 17, "bold"), 
             fg="#FFE600",
             bg="#111111",
-            wraplength=overlay_w - 20,
             justify=tk.CENTER
         )
-        self.sub_label.pack(expand=True, fill=tk.BOTH, padx=10, pady=5)
+        self.sub_label.pack(expand=True, fill=tk.BOTH, padx=12, pady=6)
 
-        # Başlangıçta gizle: Ekranda konuşma/yazı yokken siyah kutu görünmemeli!
+        self._exclude_window_from_capture(self.overlay)
+        # Başlangıçta gizle: Ekranda konuşma/yazı yokken kesinlikle hiçbir kutu görünmemeli!
         self.overlay.withdraw()
 
     def _show_subtitle(self, text):
-        if hasattr(self, 'overlay') and self.overlay and self.is_running:
-            self.sub_text.set(text)
-            self.overlay.deiconify()
+        if not (hasattr(self, 'overlay') and self.overlay and self.is_running):
+            return
+        clean_text = text.strip() if text else ""
+        if not clean_text:
+            self._hide_subtitle()
+            return
+
+        from tkinter import font
+        font_obj = font.Font(family="Helvetica", size=17, weight="bold")
+
+        # Kullanıcının belirlediği alan genişliğine göre dinamik max sınır
+        max_w = max(400, min(self.overlay_pos.get('width', 800), 950))
+        box_w, box_h, wrapped_text = self._compute_box_size(clean_text, font_obj, max_width=max_w)
+        if not wrapped_text:
+            self._hide_subtitle()
+            return
+
+        self.sub_label.config(text=wrapped_text)
+
+        # Yatayda merkezleme: Kullanıcının belirlediği kutunun yatay ortasına tam otur
+        center_x = self.overlay_pos['left'] + (self.overlay_pos['width'] // 2)
+        new_left = max(0, center_x - (box_w // 2))
+
+        # Dikeyde merkezleme: İngilizce altyazının tam üstüne oturması için dikeyde ortala
+        center_y = self.overlay_pos['top'] + (self.overlay_pos['height'] // 2)
+        new_top = max(0, center_y - (box_h // 2))
+
+        self.overlay.geometry(f"{box_w}x{box_h}+{new_left}+{new_top}")
+        self._exclude_window_from_capture(self.overlay)
+        self.overlay.deiconify()
 
     def _hide_subtitle(self):
         if hasattr(self, 'overlay') and self.overlay:
-            self.sub_text.set("")
+            self.sub_label.config(text="")
             self.overlay.withdraw()
 
     def translation_loop(self):

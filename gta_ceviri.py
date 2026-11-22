@@ -395,11 +395,15 @@ class GameSubtitleTranslator:
     def _setup_overlay_window_native(self, window, exclude_from_capture=False):
         """macOS ve Windows üzerinde pencereyi oyun üstü (HUD / Game Overlay) moduna alır:
         1. Tam ekran oyunların (PS Remote Play) üzerinde görünmesini sağlar (FullScreenAuxiliary).
-        2. Ekranlar veya masaüstleri (Spaces) arasında geçiş yapıldığında oyunu terk etmez, masaüstüne geri atmaz (CanJoinAllSpaces).
+        2. TÜM Space/masaüstlerinde görünür kılar (CanJoinAllSpaces) — hangi ekrana geçersen geç takip eder.
         3. Odak çalmaz ve controller/klavye kontrollerini engellemez.
         4. exclude_from_capture=True ise ekran yakalamadan gizlenir (sadece çeviri overlay'ı için)."""
         try:
             if sys.platform == "darwin":
+                # Pencere tam oluşmadan native API çalışmaz — Tkinter'ın NS penceresini realize etmesini bekle
+                window.update_idletasks()
+                window.update()
+
                 import ctypes
                 import ctypes.util
                 objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
@@ -415,9 +419,10 @@ class GameSubtitleTranslator:
                 windows = objc.objc_msgSend(sharedApp, objc.sel_registerName(b"windows"))
 
                 count = objc.objc_msgSend(windows, objc.sel_registerName(b"count"))
-                # NSWindowCollectionBehavior:
-                # CanJoinAllSpaces (1) | FullScreenAuxiliary (256) | Stationary (16) | IgnoresCycle (64) = 337
-                behavior = 1 | 256 | 16 | 64
+                # NSWindowCollectionBehavior — TÜM Space'lerde görünsün:
+                # CanJoinAllSpaces (1) | FullScreenAuxiliary (256) | IgnoresCycle (64) = 321
+                # NOT: Stationary (16) KULLANILMAMALI — CanJoinAllSpaces ile çakışıp pencereyi tek Space'e kilitler!
+                behavior = 1 | 256 | 64
 
                 for i in range(count):
                     objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
@@ -428,7 +433,7 @@ class GameSubtitleTranslator:
                         objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
                         objc.objc_msgSend(w, objc.sel_registerName(b"setSharingType:"), 0)
 
-                    # 2. Tam ekran oyunlar ve tüm Space/Masaüstlerinde görünür kıl (Masaüstüne geri atma sorununu çözer)
+                    # 2. TÜM Space/Masaüstü/FullScreen ekranlarında görünür kıl
                     objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
                     objc.objc_msgSend(w, objc.sel_registerName(b"setCollectionBehavior:"), behavior)
 
@@ -517,7 +522,7 @@ class GameSubtitleTranslator:
         self.overlay.attributes("-topmost", True)
         # Başlangıçta tamamen görünmez — yazı algılanana kadar hiçbir şey görünmez
         self.overlay.attributes("-alpha", 0.0)
-        self.overlay.config(bg="#111111")
+        self.overlay.config(background="#111111")
         # Başlangıç boyutu minimal (ekranda hiçbir kutu görünmez)
         self.overlay.geometry("1x1+0+0")
 
@@ -531,8 +536,9 @@ class GameSubtitleTranslator:
         )
         self.sub_label.pack(expand=True, fill=tk.BOTH, padx=12, pady=6)
 
-        # macOS Spaces / Full Screen & Capture ayarları — overlay ekran yakalamadan gizlenir
-        self._setup_overlay_window_native(self.overlay, exclude_from_capture=True)
+        # Pencere tam realize olduktan sonra native overlay ayarlarını uygula
+        # 150ms gecikme ile — Tkinter'ın NSWindow'u tam oluşturmasını garanti eder
+        self.root.after(150, lambda: self._setup_overlay_window_native(self.overlay, exclude_from_capture=True))
 
     def _show_subtitle(self, text):
         if not (self.overlay and self.sub_label and self.is_running):
@@ -563,10 +569,10 @@ class GameSubtitleTranslator:
         new_top = max(0, center_y - (box_h // 2))
 
         self.overlay.geometry(f"{box_w}x{box_h}+{new_left}+{new_top}")
-        # Her gösterimde native özellikleri tekrar uygula (geometry değişince reset olabiliyor)
-        self._setup_overlay_window_native(self.overlay, exclude_from_capture=True)
         # Sadece opaklığı aç: Bu sayede macOS masaüstü değiştirmez, odak çalmaz
         self.overlay.attributes("-alpha", 0.92)
+        # Geometry değişince native ayarlar sıfırlanabilir — kısa gecikmeyle yeniden uygula
+        self.root.after(10, lambda: self._setup_overlay_window_native(self.overlay, exclude_from_capture=True))
 
     def _hide_subtitle(self):
         if self.overlay:

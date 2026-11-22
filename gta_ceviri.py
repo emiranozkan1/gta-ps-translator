@@ -20,6 +20,17 @@ os.environ["XDG_DATA_HOME"] = str(MODELS_DATA_DIR / "share")
 os.environ["XDG_CONFIG_HOME"] = str(MODELS_DATA_DIR / "config")
 os.environ["XDG_CACHE_HOME"] = str(MODELS_DATA_DIR / "cache")
 
+# Stanza'nın her çeviride internete bağlanmaya çalışmasını önle (%100 çevrimdışı ve hızlı çalışsın)
+try:
+    import stanza
+    _orig_stanza_init = stanza.Pipeline.__init__
+    def _offline_stanza_init(self, *args, **kwargs):
+        kwargs["download_method"] = None
+        _orig_stanza_init(self, *args, **kwargs)
+    stanza.Pipeline.__init__ = _offline_stanza_init
+except Exception:
+    pass
+
 # Gerekli Temel Paketler:
 # pip3 install mss deep-translator rapidocr_onnxruntime Pillow numpy
 # İsteğe bağlı yerel çevrimdışı model için:

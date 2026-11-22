@@ -14,3 +14,17 @@ if [ $? -ne 0 ]; then
 fi
 
 python3 gta_ceviri.py
+
+# Uygulama kapandiktan sonra terminal penceresini de otomatik kapat
+osascript -e 'tell application "Terminal"
+    repeat with w in windows
+        try
+            if name of w contains "baslat_mac" then
+                close w
+            end if
+        end try
+    end repeat
+    if (count of windows) = 0 then quit
+end tell' 2>/dev/null &
+
+exit 0

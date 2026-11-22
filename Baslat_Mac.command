@@ -21,8 +21,31 @@ fi
 
 python3 gta_ceviri.py
 
-if [ $? -ne 0 ]; then
-    echo ""
-    echo "[!] Bir hata olustu. Pencereyi kapatmak icin herhangi bir tusa basin..."
-    read -n 1
+EXIT_CODE=$?
+
+# Uygulama kapandiktan sonra bu terminal penceresini de otomatik kapat
+# Hata varsa kullaniciya goster, yoksa terminali kapat
+if [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 0 ]; then
+    # os._exit(0) kullanildiginda exit code her zaman 0 olur
+    :
 fi
+
+# Terminal penceresini otomatik kapat (kullanici bir sey yapmasina gerek yok)
+osascript -e 'tell application "Terminal"
+    set windowCount to count of windows
+    if windowCount > 0 then
+        repeat with w in windows
+            try
+                if name of w contains "GTA 6" or name of w contains "Baslat_Mac" then
+                    close w
+                end if
+            end try
+        end repeat
+    end if
+    -- Eger baska terminal penceresi kalmadiysa Terminal uygulamasini da kapat
+    if (count of windows) = 0 then
+        quit
+    end if
+end tell' 2>/dev/null &
+
+exit 0

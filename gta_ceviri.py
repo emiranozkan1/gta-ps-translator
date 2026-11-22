@@ -60,8 +60,28 @@ class GameSubtitleTranslator:
         self.local_model_ready = False
 
         self.setup_ui()
+
+        # Pencere kapatıldığında tüm işlemleri temizle ve terminali de kapat
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
         # Arka planda yerel modelin kurulu olup olmadığını kontrol et
         threading.Thread(target=self.check_local_model, daemon=True).start()
+
+    def _on_close(self):
+        """Uygulama kapatıldığında tüm thread'leri durdur, overlay'ı temizle ve Python sürecini tamamen sonlandır."""
+        self.is_running = False
+        if self.overlay:
+            try:
+                self.overlay.destroy()
+            except Exception:
+                pass
+            self.overlay = None
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        # Tüm arka plan thread'leri daemon olduğu için process kapanınca otomatik ölür
+        os._exit(0)
 
     def load_settings(self):
         self.roi = {"top": 750, "left": 350, "width": 800, "height": 110}

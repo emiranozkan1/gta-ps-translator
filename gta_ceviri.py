@@ -229,6 +229,9 @@ class GameSubtitleTranslator:
             ("PIL", "Pillow"),
             ("numpy", "numpy")
         ]
+        if sys.platform == "darwin":
+            checks.append(("AppKit", "pyobjc-framework-Cocoa"))
+
         for mod, pkg in checks:
             try:
                 __import__(mod)
@@ -398,57 +401,53 @@ class GameSubtitleTranslator:
         2. TÜM Space/masaüstlerinde görünür kılar (CanJoinAllSpaces) — hangi ekrana geçersen geç takip eder.
         3. Odak çalmaz ve controller/klavye kontrollerini engellemez.
         4. exclude_from_capture=True ise ekran yakalamadan gizlenir (sadece çeviri overlay'ı için)."""
-        try:
-            if sys.platform == "darwin":
-                # Pencere tam oluşmadan native API çalışmaz — Tkinter'ın NS penceresini realize etmesini bekle
+        if sys.platform == "darwin":
+            try:
                 window.update_idletasks()
-                window.update()
+                import AppKit  # type: ignore[import-untyped]
 
-                import ctypes
-                import ctypes.util
-                objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
-                objc.objc_getClass.restype = ctypes.c_void_p
-                objc.objc_getClass.argtypes = [ctypes.c_char_p]
-                objc.sel_registerName.restype = ctypes.c_void_p
-                objc.sel_registerName.argtypes = [ctypes.c_char_p]
-                objc.objc_msgSend.restype = ctypes.c_void_p
-
-                NSApplication = objc.objc_getClass(b"NSApplication")
-                objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-                sharedApp = objc.objc_msgSend(NSApplication, objc.sel_registerName(b"sharedApplication"))
-                windows = objc.objc_msgSend(sharedApp, objc.sel_registerName(b"windows"))
-
-                count = objc.objc_msgSend(windows, objc.sel_registerName(b"count"))
-                # NSWindowCollectionBehavior — TÜM Space'lerde görünsün:
                 # CanJoinAllSpaces (1) | FullScreenAuxiliary (256) | IgnoresCycle (64) = 321
-                # NOT: Stationary (16) KULLANILMAMALI — CanJoinAllSpaces ile çakışıp pencereyi tek Space'e kilitler!
-                behavior = 1 | 256 | 64
+                behavior = (
+                    AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces
+                    | AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
+                    | AppKit.NSWindowCollectionBehaviorIgnoresCycle
+                )
 
-                for i in range(count):
-                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
-                    w = objc.objc_msgSend(windows, objc.sel_registerName(b"objectAtIndex:"), i)
+                target_title = ""
+                try:
+                    target_title = window.title()
+                except Exception:
+                    pass
 
-                    # 1. Sadece çeviri overlay penceresini ekran yakalamadan gizle
-                    if exclude_from_capture:
-                        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
-                        objc.objc_msgSend(w, objc.sel_registerName(b"setSharingType:"), 0)
+                ns_app = AppKit.NSApplication.sharedApplication()
+                for w in ns_app.windows():
+                    w_title = w.title()
+                    if (target_title and w_title == target_title) or (not target_title and w.isVisible()):
+                        # 1. TÜM Space / Masaüstü / FullScreen ekranlarında görünür kıl
+                        w.setCollectionBehavior_(behavior)
+                        # 2. Seviyeyi en üste çıkart (101: NSPopUpMenuWindowLevel - her şeyin üstünde)
+                        w.setLevel_(AppKit.NSPopUpMenuWindowLevel)
+                        # 3. Odak başka uygulamaya geçtiğinde ASLA gizlenme
+                        if hasattr(w, "setHidesOnDeactivate_"):
+                            w.setHidesOnDeactivate_(False)
+                        # 4. Kullanıcı başka bir ekrana/uygulamaya geçtiğinde bile en öne çiz
+                        if hasattr(w, "orderFrontRegardless"):
+                            w.orderFrontRegardless()
+                        # 5. Sadece çeviri overlay'ı ekran yakalamadan gizle
+                        if exclude_from_capture and hasattr(w, "setSharingType_"):
+                            w.setSharingType_(AppKit.NSWindowSharingNone)
+            except Exception:
+                pass
 
-                    # 2. TÜM Space/Masaüstü/FullScreen ekranlarında görünür kıl
-                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
-                    objc.objc_msgSend(w, objc.sel_registerName(b"setCollectionBehavior:"), behavior)
-
-                    # 3. Seviyeyi en üste çıkart — kCGPopUpMenuWindowLevel (101) tarayıcılar dahil HER şeyin üstünde
-                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
-                    objc.objc_msgSend(w, objc.sel_registerName(b"setLevel:"), 101)
-
-            elif sys.platform == "win32":
+        elif sys.platform == "win32":
+            try:
                 import ctypes
                 hwnd = window.winfo_id()
                 if exclude_from_capture:
                     # WDA_EXCLUDEFROMCAPTURE = 0x00000011 (Windows 10 2004+)
                     ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x00000011)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
     def _compute_box_size(self, text, font_obj, max_width=850, pad_x=22, pad_y=10):
         words = text.split()
@@ -518,6 +517,7 @@ class GameSubtitleTranslator:
 
     def create_overlay_window(self):
         self.overlay = tk.Toplevel(self.root)
+        self.overlay.title("__GTA_OVERLAY__")
         self.overlay.overrideredirect(True)
         self.overlay.attributes("-topmost", True)
         # Başlangıçta tamamen görünmez — yazı algılanana kadar hiçbir şey görünmez
@@ -536,9 +536,9 @@ class GameSubtitleTranslator:
         )
         self.sub_label.pack(expand=True, fill=tk.BOTH, padx=12, pady=6)
 
-        # Pencere tam realize olduktan sonra native overlay ayarlarını uygula
-        # 150ms gecikme ile — Tkinter'ın NSWindow'u tam oluşturmasını garanti eder
-        self.root.after(150, lambda: self._setup_overlay_window_native(self.overlay, exclude_from_capture=True))
+        # macOS Spaces / Full Screen & Capture ayarları
+        self._setup_overlay_window_native(self.overlay, exclude_from_capture=True)
+        self.root.after(100, lambda: self._setup_overlay_window_native(self.overlay, exclude_from_capture=True))
 
     def _show_subtitle(self, text):
         if not (self.overlay and self.sub_label and self.is_running):
@@ -571,8 +571,8 @@ class GameSubtitleTranslator:
         self.overlay.geometry(f"{box_w}x{box_h}+{new_left}+{new_top}")
         # Sadece opaklığı aç: Bu sayede macOS masaüstü değiştirmez, odak çalmaz
         self.overlay.attributes("-alpha", 0.92)
-        # Geometry değişince native ayarlar sıfırlanabilir — kısa gecikmeyle yeniden uygula
-        self.root.after(10, lambda: self._setup_overlay_window_native(self.overlay, exclude_from_capture=True))
+        # Aktif ekranda en öne çizilmesi için native overlay ayarlarını anında pekiştir
+        self._setup_overlay_window_native(self.overlay, exclude_from_capture=True)
 
     def _hide_subtitle(self):
         if self.overlay:

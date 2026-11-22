@@ -13,7 +13,7 @@ echo "  GTA 6 / PS Remote Play Canli Cevirici Baslatiliyor..."
 echo "========================================================"
 
 # Temel paketler kurulu mu kontrol et, eksikse otomatik kur
-python3 -c "import mss, deep_translator, rapidocr_onnxruntime, PIL, numpy" >/dev/null 2>&1
+python3 -c "import mss, deep_translator, rapidocr_onnxruntime, PIL, numpy, AppKit" >/dev/null 2>&1
 if [ $? -ne 0 ]; then
     echo "[+] Gerekli yapay zeka paketleri otomatik kuruluyor, lutfen bekleyin..."
     python3 -m pip install -r requirements.txt

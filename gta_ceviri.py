@@ -660,7 +660,7 @@ class GameSubtitleTranslator:
     def _preprocess_image(self, img_np):
         """OCR doğruluğunu artırmak için görüntüyü ön işleme tabi tutar.
         Kontrast artırma, gri tonlama ve eşikleme ile YouTube/oyun altyazılarını net okur."""
-        import numpy as np
+        import numpy as np  # type: ignore[import-untyped]
         
         # RGB -> Gri tonlama
         if len(img_np.shape) == 3:
@@ -684,7 +684,7 @@ class GameSubtitleTranslator:
 
     def translation_loop(self):
         import mss  # type: ignore[import-untyped]
-        import numpy as np
+        import numpy as np  # type: ignore[import-untyped]
         from PIL import Image  # type: ignore[import-untyped]
         from rapidocr_onnxruntime import RapidOCR  # type: ignore[import-untyped]
 

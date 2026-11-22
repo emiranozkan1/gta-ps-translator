@@ -20,20 +20,28 @@ echo [1/3] Python kontrol ediliyor...
 
 set "PYTHON_EXE="
 
-:: PATH'te python var mi?
-where python >nul 2>&1
+:: Oncelikle PATH'teki python gercekten calisiyor mu ve WindowsApps tuzagi degil mi test et
+python -c "import sys" >nul 2>&1
 if %errorlevel% equ 0 (
     for /f "tokens=*" %%i in ('where python') do (
-        if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
+        echo "%%i" | findstr /i "WindowsApps" >nul
+        if errorlevel 1 (
+            if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
+        )
     )
-    echo [+] Python zaten kurulu bulundu: !PYTHON_EXE!
-) else (
-    :: Standart AppData dizinlerinde ara
+    if defined PYTHON_EXE echo [+] Python zaten kurulu bulundu: !PYTHON_EXE!
+)
+
+:: PATH'te bulunamadiysa standart dizinlerde ara
+if not defined PYTHON_EXE (
     if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
         set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
         echo [+] Python bulundu: !PYTHON_EXE!
     ) else if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" (
         set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+        echo [+] Python bulundu: !PYTHON_EXE!
+    ) else if exist "%ProgramFiles%\Python312\python.exe" (
+        set "PYTHON_EXE=%ProgramFiles%\Python312\python.exe"
         echo [+] Python bulundu: !PYTHON_EXE!
     )
 )

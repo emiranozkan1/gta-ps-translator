@@ -10,15 +10,19 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-# macOS ve Linux üzerinde ~/.local izin hatalarını (PermissionError) önlemek için:
-# Model ve veri dizinlerini doğrudan proje klasörüne yönlendiriyoruz
+# Model ve veri dizinlerini doğrudan proje klasörüne yönlendiriyoruz (Windows/Mac/Linux uyumlu)
 BASE_DIR = Path(__file__).resolve().parent
 MODELS_DATA_DIR = BASE_DIR / "models_data"
 MODELS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+(MODELS_DATA_DIR / "share").mkdir(parents=True, exist_ok=True)
+(MODELS_DATA_DIR / "config").mkdir(parents=True, exist_ok=True)
+(MODELS_DATA_DIR / "cache").mkdir(parents=True, exist_ok=True)
 
 os.environ["XDG_DATA_HOME"] = str(MODELS_DATA_DIR / "share")
 os.environ["XDG_CONFIG_HOME"] = str(MODELS_DATA_DIR / "config")
 os.environ["XDG_CACHE_HOME"] = str(MODELS_DATA_DIR / "cache")
+os.environ["ARGOS_PACKAGES_DIR"] = str(MODELS_DATA_DIR / "share" / "argos-translate" / "packages")
+os.environ["ARGOS_TRANSLATE_PACKAGE_DIR"] = str(MODELS_DATA_DIR / "share" / "argos-translate" / "packages")
 
 # Stanza'nın her çeviride internete bağlanmaya çalışmasını önle (%100 çevrimdışı ve hızlı çalışsın)
 try:

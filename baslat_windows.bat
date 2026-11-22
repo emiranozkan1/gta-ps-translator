@@ -5,14 +5,23 @@ title GTA 6 PS Remote Play Canli Cevirici
 :: Python kontrolu
 set "PYTHON_EXE="
 
-where python >nul 2>&1
+python -c "import sys" >nul 2>&1
 if %errorlevel% equ 0 (
-    set "PYTHON_EXE=python"
-) else (
+    for /f "tokens=*" %%i in ('where python') do (
+        echo "%%i" | findstr /i "WindowsApps" >nul
+        if errorlevel 1 (
+            if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
+        )
+    )
+)
+
+if not defined PYTHON_EXE (
     if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
         set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
     ) else if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" (
         set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+    ) else if exist "%ProgramFiles%\Python312\python.exe" (
+        set "PYTHON_EXE=%ProgramFiles%\Python312\python.exe"
     )
 )
 

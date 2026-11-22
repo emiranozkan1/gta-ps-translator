@@ -322,6 +322,7 @@ class GameSubtitleTranslator:
             font=("Helvetica", 12, "bold")
         )
         lbl.pack(expand=True)
+        self._setup_overlay_window_native(self.selector_win)
 
         def save_and_close():
             self.roi["left"] = self.selector_win.winfo_x()
@@ -353,6 +354,7 @@ class GameSubtitleTranslator:
             font=("Helvetica", 11, "bold")
         )
         lbl.pack(expand=True)
+        self._setup_overlay_window_native(self.overlay_selector_win)
 
         def save_and_close():
             self.overlay_pos["left"] = self.overlay_selector_win.winfo_x()
@@ -366,10 +368,13 @@ class GameSubtitleTranslator:
 
         self.overlay_selector_win.protocol("WM_DELETE_WINDOW", save_and_close)
 
-    def _exclude_window_from_capture(self, window):
-        """macOS ve Windows üzerinde çeviri penceresini ekran yakalamadan gizler.
-        Böylece Türkçe altyazı doğrudan İngilizce altyazının tam üstüne basılsa dahi
-        OCR oyundaki İngilizce altyazıyı kesintisiz okumaya devam edebilir."""
+    def _setup_overlay_window_native(self, window):
+        """macOS ve Windows üzerinde pencereyi oyun üstü (HUD / Game Overlay) moduna alır:
+        1. Tam ekran oyunların (PS Remote Play) üzerinde görünmesini sağlar (FullScreenAuxiliary).
+        2. Ekranlar veya masaüstleri (Spaces) arasında geçiş yapıldığında oyunu terk etmez, masaüstüne geri atmaz (CanJoinAllSpaces).
+        3. Odak çalmaz ve controller/klavye kontrollerini engellemez.
+        4. Ekran yakalamadan izole edilir (NSWindowSharingNone / WDA_EXCLUDEFROMCAPTURE), 
+           böylece İngilizce altyazının tam üstüne otursa bile OCR altındaki oyunu okur."""
         try:
             if sys.platform == "darwin":
                 import ctypes
@@ -387,12 +392,26 @@ class GameSubtitleTranslator:
                 windows = objc.objc_msgSend(sharedApp, objc.sel_registerName(b"windows"))
 
                 count = objc.objc_msgSend(windows, objc.sel_registerName(b"count"))
+                # NSWindowCollectionBehavior:
+                # CanJoinAllSpaces (1) | FullScreenAuxiliary (256) | Stationary (16) | IgnoresCycle (64) = 337
+                behavior = 1 | 256 | 16 | 64
+
                 for i in range(count):
                     objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
                     w = objc.objc_msgSend(windows, objc.sel_registerName(b"objectAtIndex:"), i)
-                    # 0 = NSWindowSharingNone (ekran yakalamada görünmez)
+
+                    # 1. Ekran yakalamada görünmez yap (NSWindowSharingNone = 0)
                     objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
                     objc.objc_msgSend(w, objc.sel_registerName(b"setSharingType:"), 0)
+
+                    # 2. Tam ekran oyunlar ve tüm Space/Masaüstlerinde görünür kıl (Masaüstüne geri atma sorununu çözer)
+                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+                    objc.objc_msgSend(w, objc.sel_registerName(b"setCollectionBehavior:"), behavior)
+
+                    # 3. Seviyeyi tam ekran oyunların da üstüne çıkart (Status / Overlay level = 25)
+                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+                    objc.objc_msgSend(w, objc.sel_registerName(b"setLevel:"), 25)
+
             elif sys.platform == "win32":
                 import ctypes
                 hwnd = window.winfo_id()
@@ -466,7 +485,7 @@ class GameSubtitleTranslator:
         self.overlay = tk.Toplevel(self.root)
         self.overlay.overrideredirect(True)
         self.overlay.attributes("-topmost", True)
-        self.overlay.attributes("-alpha", 0.92)
+        self.overlay.attributes("-alpha", 0.0) # Başlangıçta 0.0 ile tamamen görünmez
         self.overlay.config(bg="#111111")
 
         self.sub_label = tk.Label(
@@ -479,9 +498,8 @@ class GameSubtitleTranslator:
         )
         self.sub_label.pack(expand=True, fill=tk.BOTH, padx=12, pady=6)
 
-        self._exclude_window_from_capture(self.overlay)
-        # Başlangıçta gizle: Ekranda konuşma/yazı yokken kesinlikle hiçbir kutu görünmemeli!
-        self.overlay.withdraw()
+        # macOS Spaces / Full Screen & Capture ayarları
+        self._setup_overlay_window_native(self.overlay)
 
     def _show_subtitle(self, text):
         if not (hasattr(self, 'overlay') and self.overlay and self.is_running):
@@ -512,13 +530,15 @@ class GameSubtitleTranslator:
         new_top = max(0, center_y - (box_h // 2))
 
         self.overlay.geometry(f"{box_w}x{box_h}+{new_left}+{new_top}")
-        self._exclude_window_from_capture(self.overlay)
-        self.overlay.deiconify()
+        self._setup_overlay_window_native(self.overlay)
+        # Sadece opaklığı aç: Bu sayede macOS masaüstü değiştirmez, odak çalmaz ve tam ekran oyun üzerinde kalır!
+        self.overlay.attributes("-alpha", 0.92)
 
     def _hide_subtitle(self):
         if hasattr(self, 'overlay') and self.overlay:
+            # Opaklığı 0 yapıp metni temizliyoruz (withdraw kullanmadan, böylece Space zıplaması asla olmaz)
+            self.overlay.attributes("-alpha", 0.0)
             self.sub_label.config(text="")
-            self.overlay.withdraw()
 
     def _calculate_display_duration(self, text):
         """Kullanıcı deneyimi için altyazının ekranda kalma süresini metin uzunluğuna göre dinamik hesaplar.

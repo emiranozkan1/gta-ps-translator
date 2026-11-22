@@ -46,6 +46,7 @@ class GameSubtitleTranslator:
         self.is_running = False
         self.last_detected_text = ""
         self.last_seen_time = 0
+        self.current_duration = 3.5
 
         # Koordinatları yükle (Kullanıcı önceden kaydettiyse hatırlar)
         self.load_settings()
@@ -519,6 +520,18 @@ class GameSubtitleTranslator:
             self.sub_label.config(text="")
             self.overlay.withdraw()
 
+    def _calculate_display_duration(self, text):
+        """Kullanıcı deneyimi için altyazının ekranda kalma süresini metin uzunluğuna göre dinamik hesaplar.
+        Netflix/film standartlarına uygun ortalama okuma hızını (15 karakter/sn) esas alır."""
+        if not text:
+            return 3.0
+        char_count = len(text.strip())
+        # Taban süre: 2.8 saniye (gözün odaklanıp algılaması için)
+        # Karakter başına ~0.065 saniye ek süre
+        duration = 2.8 + (char_count * 0.065)
+        # En az 3.0 saniye, en fazla 7.5 saniye ekranda tut
+        return min(max(duration, 3.0), 7.5)
+
     def translation_loop(self):
         import mss
         import numpy as np
@@ -574,12 +587,14 @@ class GameSubtitleTranslator:
                                     translated = argos_trans.translate(detected_text)
                                 else:
                                     translated = google_trans.translate(detected_text)
+                                # Metin uzunluğuna göre dinamik ekranda kalma süresini belirle
+                                self.current_duration = self._calculate_display_duration(translated)
                                 self.root.after(0, lambda t=translated: self._show_subtitle(t))
                             except Exception:
                                 pass
 
-                    # 3.5 saniye yeni ses/yazı yoksa ekranı temizle ve kutuyu gizle
-                    if time.time() - self.last_seen_time > 3.5 and self.last_detected_text != "":
+                    # Metin uzunluğuna göre hesaplanan süre dolduysa ve yeni konuşma yoksa kutuyu gizle
+                    if time.time() - self.last_seen_time > self.current_duration and self.last_detected_text != "":
                         self.root.after(0, self._hide_subtitle)
                         self.last_detected_text = ""
 

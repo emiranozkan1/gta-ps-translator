@@ -49,6 +49,8 @@ class GameSubtitleTranslator:
         self.current_duration = 3.5
         self.sentence_buffer = ""
         self.last_fragment_time = 0
+        self.overlay = None
+        self.sub_label = None
 
         # Koordinatları yükle (Kullanıcı önceden kaydettiyse hatırlar)
         self.load_settings()
@@ -108,14 +110,14 @@ class GameSubtitleTranslator:
 
         btn_roi = ttk.Button(
             area_frame, 
-            text="🎯 1. Oyun Altyazı Okuma Alanı (Kırmızı Kutu)", 
+            text="🎯 1. Altyazı Alanını Ayarla (Kutuyu Yerleştir)", 
             command=self.open_roi_selector
         )
         btn_roi.pack(fill=tk.X, pady=2)
 
         btn_overlay = ttk.Button(
             area_frame, 
-            text="💬 2. Çeviri Yazı Konumunu Ayarla (Mavi Kutu)", 
+            text="💬 2. Çeviri Konumunu Ayarla (Opsiyonel)", 
             command=self.open_overlay_selector
         )
         btn_overlay.pack(fill=tk.X, pady=2)
@@ -297,7 +299,7 @@ class GameSubtitleTranslator:
                 self.root.after(0, lambda: self.status_var.set("Durum: Yerel model hazır! Çeviriyi başlatabilirsin."))
                 self.root.after(0, lambda: messagebox.showinfo(
                     "Tebrikler!",
-                    "Açık kaynak yerel yapay zeka çeviri modeli başarıyla kuruldu!\nArtık '2. Canlı Çeviriyi Başlat' butonuna basarak tamamen çevrimdışı oynayabilirsiniz."
+                    "Açık kaynak yerel yapay zeka çeviri modeli başarıyla kuruldu!\nArtık '3. Canlı Çeviriyi Başlat' butonuna basarak tamamen çevrimdışı oynayabilirsiniz."
                 ))
             else:
                 self.root.after(0, lambda: self.status_var.set("Hata: en->tr dil paketi bulunamadı."))
@@ -370,13 +372,12 @@ class GameSubtitleTranslator:
 
         self.overlay_selector_win.protocol("WM_DELETE_WINDOW", save_and_close)
 
-    def _setup_overlay_window_native(self, window):
+    def _setup_overlay_window_native(self, window, exclude_from_capture=False):
         """macOS ve Windows üzerinde pencereyi oyun üstü (HUD / Game Overlay) moduna alır:
         1. Tam ekran oyunların (PS Remote Play) üzerinde görünmesini sağlar (FullScreenAuxiliary).
         2. Ekranlar veya masaüstleri (Spaces) arasında geçiş yapıldığında oyunu terk etmez, masaüstüne geri atmaz (CanJoinAllSpaces).
         3. Odak çalmaz ve controller/klavye kontrollerini engellemez.
-        4. Ekran yakalamadan izole edilir (NSWindowSharingNone / WDA_EXCLUDEFROMCAPTURE), 
-           böylece İngilizce altyazının tam üstüne otursa bile OCR altındaki oyunu okur."""
+        4. exclude_from_capture=True ise ekran yakalamadan gizlenir (sadece çeviri overlay'ı için)."""
         try:
             if sys.platform == "darwin":
                 import ctypes
@@ -402,23 +403,25 @@ class GameSubtitleTranslator:
                     objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
                     w = objc.objc_msgSend(windows, objc.sel_registerName(b"objectAtIndex:"), i)
 
-                    # 1. Ekran yakalamada görünmez yap (NSWindowSharingNone = 0)
-                    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
-                    objc.objc_msgSend(w, objc.sel_registerName(b"setSharingType:"), 0)
+                    # 1. Sadece çeviri overlay penceresini ekran yakalamadan gizle
+                    if exclude_from_capture:
+                        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+                        objc.objc_msgSend(w, objc.sel_registerName(b"setSharingType:"), 0)
 
                     # 2. Tam ekran oyunlar ve tüm Space/Masaüstlerinde görünür kıl (Masaüstüne geri atma sorununu çözer)
                     objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
                     objc.objc_msgSend(w, objc.sel_registerName(b"setCollectionBehavior:"), behavior)
 
-                    # 3. Seviyeyi tam ekran oyunların da üstüne çıkart (Status / Overlay level = 25)
+                    # 3. Seviyeyi en üste çıkart — kCGPopUpMenuWindowLevel (101) tarayıcılar dahil HER şeyin üstünde
                     objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
-                    objc.objc_msgSend(w, objc.sel_registerName(b"setLevel:"), 25)
+                    objc.objc_msgSend(w, objc.sel_registerName(b"setLevel:"), 101)
 
             elif sys.platform == "win32":
                 import ctypes
                 hwnd = window.winfo_id()
-                # WDA_EXCLUDEFROMCAPTURE = 0x00000011 (Windows 10 2004+)
-                ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x00000011)
+                if exclude_from_capture:
+                    # WDA_EXCLUDEFROMCAPTURE = 0x00000011 (Windows 10 2004+)
+                    ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x00000011)
         except Exception:
             pass
 
@@ -480,15 +483,23 @@ class GameSubtitleTranslator:
             self.is_running = False
             self.btn_toggle.config(text="▶️ 3. Canlı Çeviriyi Başlat")
             self.status_var.set("Durum: Durduruldu")
-            if hasattr(self, 'overlay') and self.overlay:
-                self.overlay.destroy()
+            if self.overlay:
+                try:
+                    self.overlay.destroy()
+                except Exception:
+                    pass
+                self.overlay = None
+                self.sub_label = None
 
     def create_overlay_window(self):
         self.overlay = tk.Toplevel(self.root)
         self.overlay.overrideredirect(True)
         self.overlay.attributes("-topmost", True)
-        self.overlay.attributes("-alpha", 0.0) # Başlangıçta 0.0 ile tamamen görünmez
+        # Başlangıçta tamamen görünmez — yazı algılanana kadar hiçbir şey görünmez
+        self.overlay.attributes("-alpha", 0.0)
         self.overlay.config(bg="#111111")
+        # Başlangıç boyutu minimal (ekranda hiçbir kutu görünmez)
+        self.overlay.geometry("1x1+0+0")
 
         self.sub_label = tk.Label(
             self.overlay, 
@@ -500,11 +511,11 @@ class GameSubtitleTranslator:
         )
         self.sub_label.pack(expand=True, fill=tk.BOTH, padx=12, pady=6)
 
-        # macOS Spaces / Full Screen & Capture ayarları
-        self._setup_overlay_window_native(self.overlay)
+        # macOS Spaces / Full Screen & Capture ayarları — overlay ekran yakalamadan gizlenir
+        self._setup_overlay_window_native(self.overlay, exclude_from_capture=True)
 
     def _show_subtitle(self, text):
-        if not (hasattr(self, 'overlay') and self.overlay and self.is_running):
+        if not (self.overlay and self.sub_label and self.is_running):
             return
         clean_text = text.strip() if text else ""
         if not clean_text:
@@ -532,15 +543,17 @@ class GameSubtitleTranslator:
         new_top = max(0, center_y - (box_h // 2))
 
         self.overlay.geometry(f"{box_w}x{box_h}+{new_left}+{new_top}")
-        self._setup_overlay_window_native(self.overlay)
-        # Sadece opaklığı aç: Bu sayede macOS masaüstü değiştirmez, odak çalmaz ve tam ekran oyun üzerinde kalır!
+        # Her gösterimde native özellikleri tekrar uygula (geometry değişince reset olabiliyor)
+        self._setup_overlay_window_native(self.overlay, exclude_from_capture=True)
+        # Sadece opaklığı aç: Bu sayede macOS masaüstü değiştirmez, odak çalmaz
         self.overlay.attributes("-alpha", 0.92)
 
     def _hide_subtitle(self):
-        if hasattr(self, 'overlay') and self.overlay:
+        if self.overlay:
             # Opaklığı 0 yapıp metni temizliyoruz (withdraw kullanmadan, böylece Space zıplaması asla olmaz)
             self.overlay.attributes("-alpha", 0.0)
-            self.sub_label.config(text="")
+            if self.sub_label:
+                self.sub_label.config(text="")
 
     def _calculate_display_duration(self, text):
         """Kullanıcı deneyimi için altyazının ekranda kalma süresini metin uzunluğuna göre dinamik hesaplar.
@@ -601,6 +614,31 @@ class GameSubtitleTranslator:
             self.sentence_buffer = curr
             return curr
 
+    def _preprocess_image(self, img_np):
+        """OCR doğruluğunu artırmak için görüntüyü ön işleme tabi tutar.
+        Kontrast artırma, gri tonlama ve eşikleme ile YouTube/oyun altyazılarını net okur."""
+        import numpy as np
+        
+        # RGB -> Gri tonlama
+        if len(img_np.shape) == 3:
+            gray = np.dot(img_np[..., :3], [0.2989, 0.5870, 0.1140]).astype(np.uint8)
+        else:
+            gray = img_np
+        
+        # Kontrast artırma (CLAHE benzeri basit histogram yayma)
+        min_val, max_val = gray.min(), gray.max()
+        if max_val > min_val:
+            gray = ((gray - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+        
+        # Altyazılar genelde açık renklidir — parlak pikselleri vurgula
+        # Adaptif eşikleme: 180 üzerini beyaz, altını siyah yap
+        threshold = 150
+        binary = np.where(gray > threshold, 255, 0).astype(np.uint8)
+        
+        # 3 kanala geri çevir (RapidOCR RGB bekler)
+        result = np.stack([binary, binary, binary], axis=-1)
+        return result
+
     def translation_loop(self):
         import mss
         import numpy as np
@@ -628,6 +666,8 @@ class GameSubtitleTranslator:
             from deep_translator import GoogleTranslator
             google_trans = GoogleTranslator(source='en', target='tr')
 
+        consecutive_empty = 0  # Üst üste boş tarama sayacı
+
         with mss.mss() as sct:
             while self.is_running:
                 try:
@@ -641,29 +681,44 @@ class GameSubtitleTranslator:
                     img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
                     img_np = np.array(img)
 
+                    # 1. İlk önce ham görüntüyle OCR dene
                     result, _ = ocr(img_np)
+                    detected_text = ""
+                    
                     if result:
                         lines = [line[1].strip() for line in result if line[1].strip()]
                         detected_text = " ".join(lines).replace("\n", " ").strip()
+                    
+                    # 2. Ham görüntüde bulamazsa, ön işlenmiş (kontrast artırılmış) görüntüyle tekrar dene
+                    if len(detected_text) < 3:
+                        processed_img = self._preprocess_image(img_np)
+                        result2, _ = ocr(processed_img)
+                        if result2:
+                            lines2 = [line[1].strip() for line in result2 if line[1].strip()]
+                            detected_text = " ".join(lines2).replace("\n", " ").strip()
 
-                        if len(detected_text) >= 3 and detected_text.lower() != self.last_detected_text.lower():
-                            self.last_detected_text = detected_text
-                            self.last_seen_time = time.time()
+                    if len(detected_text) >= 3 and detected_text.lower() != self.last_detected_text.lower():
+                        self.last_detected_text = detected_text
+                        self.last_seen_time = time.time()
+                        consecutive_empty = 0
 
-                            # Akıllı dilbilgisi birleştirmesi (İngilizce -> Türkçe cümle yapısı uyumu)
-                            text_to_translate = self._smart_merge_dialogue(detected_text)
+                        # Akıllı dilbilgisi birleştirmesi (İngilizce -> Türkçe cümle yapısı uyumu)
+                        text_to_translate = self._smart_merge_dialogue(detected_text)
 
-                            # Çeviri uygula
-                            try:
-                                if argos_trans:
-                                    translated = argos_trans.translate(text_to_translate)
-                                else:
-                                    translated = google_trans.translate(text_to_translate)
-                                # Metin uzunluğuna göre dinamik ekranda kalma süresini belirle
-                                self.current_duration = self._calculate_display_duration(translated)
-                                self.root.after(0, lambda t=translated: self._show_subtitle(t))
-                            except Exception:
-                                pass
+                        # Çeviri uygula
+                        try:
+                            if argos_trans:
+                                translated = argos_trans.translate(text_to_translate)
+                            else:
+                                translated = google_trans.translate(text_to_translate)
+                            # Metin uzunluğuna göre dinamik ekranda kalma süresini belirle
+                            self.current_duration = self._calculate_display_duration(translated)
+                            self.root.after(0, lambda t=translated: self._show_subtitle(t))
+                        except Exception:
+                            pass
+
+                    elif len(detected_text) < 3:
+                        consecutive_empty += 1
 
                     # Metin uzunluğuna göre hesaplanan süre dolduysa ve yeni konuşma yoksa kutuyu gizle
                     if time.time() - self.last_seen_time > self.current_duration and self.last_detected_text != "":

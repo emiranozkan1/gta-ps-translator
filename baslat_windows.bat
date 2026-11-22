@@ -1,7 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
 title GTA 6 PS Remote Play Canli Cevirici
-color 0E
 
 :: Python kontrolu
 set "PYTHON_EXE="
@@ -30,7 +29,10 @@ echo ========================================================
 
 "%PYTHON_EXE%" "%~dp0gta_ceviri.py"
 
-if errorlevel 1 (
+:: Program basariyla veya carpiya basilarak kapandiginda cmd penceresini de otomatik kapat
+if %errorlevel% equ 0 exit /b 0
+
+if %errorlevel% neq 0 (
     echo.
     echo Bir hata olustu. Eksik paketler olabilir.
     echo Lutfen 'Kurulum_Sihirbazi.bat' dosyasini calistirin.

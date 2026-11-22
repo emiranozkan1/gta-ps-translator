@@ -22,12 +22,12 @@ os.environ["XDG_CACHE_HOME"] = str(MODELS_DATA_DIR / "cache")
 
 # Stanza'nın her çeviride internete bağlanmaya çalışmasını önle (%100 çevrimdışı ve hızlı çalışsın)
 try:
-    import stanza
+    import stanza  # type: ignore[import-untyped]
     _orig_stanza_init = stanza.Pipeline.__init__
-    def _offline_stanza_init(self, *args, **kwargs):
+    def _offline_stanza_init(self_pipe, *args, **kwargs):  # noqa: N805
         kwargs["download_method"] = None
-        _orig_stanza_init(self, *args, **kwargs)
-    stanza.Pipeline.__init__ = _offline_stanza_init
+        _orig_stanza_init(self_pipe, *args, **kwargs)
+    stanza.Pipeline.__init__ = _offline_stanza_init  # type: ignore[assignment]
 except Exception:
     pass
 
@@ -253,8 +253,8 @@ class GameSubtitleTranslator:
 
     def check_local_model(self):
         try:
-            import argostranslate.package
-            import argostranslate.translate
+            import argostranslate.package  # type: ignore[import-untyped]
+            import argostranslate.translate  # type: ignore[import-untyped]
             installed = argostranslate.translate.get_installed_languages()
             from_lang = next((l for l in installed if l.code == "en"), None)
             to_lang = next((l for l in installed if l.code == "tr"), None)
@@ -276,8 +276,8 @@ class GameSubtitleTranslator:
 
         # 1. argostranslate kütüphanesi kurulu mu? Değilse arka planda otomatik kur
         try:
-            import argostranslate.package
-            import argostranslate.translate
+            import argostranslate.package  # type: ignore[import-untyped]
+            import argostranslate.translate  # type: ignore[import-untyped]
         except ImportError:
             self.root.after(0, lambda: self.btn_download_model.config(text="⏳ Yapay Zeka Paketi Kuruluyor...", state=tk.DISABLED))
             self.root.after(0, lambda: self.status_var.set("Durum: argostranslate kütüphanesi otomatik kuruluyor (Lütfen bekleyin)..."))
@@ -293,8 +293,8 @@ class GameSubtitleTranslator:
                 return
 
             try:
-                import argostranslate.package
-                import argostranslate.translate
+                import argostranslate.package  # type: ignore[import-untyped]
+                import argostranslate.translate  # type: ignore[import-untyped]  # type: ignore[import-untyped]
             except ImportError:
                 self.root.after(0, lambda: messagebox.showerror(
                     "Yeniden Başlatma Gerekli", 
@@ -341,8 +341,8 @@ class GameSubtitleTranslator:
         lbl = tk.Label(
             self.selector_win, 
             text="Bu kırmızı kutuyu PS Remote Play'deki altyazının tam üstüne sürükleyip boyutlandır.\nİşin bitince bu pencereyi kapat.", 
-            fg="white", 
-            bg="red", 
+            foreground="white", 
+            background="red", 
             font=("Helvetica", 12, "bold")
         )
         lbl.pack(expand=True)
@@ -373,8 +373,8 @@ class GameSubtitleTranslator:
         lbl = tk.Label(
             self.overlay_selector_win, 
             text="💬 Türkçe Çeviri Altyazısı Bu Kutunun İçinde Görünecektir.\nBu mavi kutuyu ekranda istediğin yere sürükle ve boyutlandır.\nİşin bitince bu pencereyi kapat.", 
-            fg="white", 
-            bg="#0066ff", 
+            foreground="white", 
+            background="#0066ff", 
             font=("Helvetica", 11, "bold")
         )
         lbl.pack(expand=True)
@@ -525,8 +525,8 @@ class GameSubtitleTranslator:
             self.overlay, 
             text="", 
             font=("Helvetica", 17, "bold"), 
-            fg="#FFE600",
-            bg="#111111",
+            foreground="#FFE600",
+            background="#111111",
             justify=tk.CENTER
         )
         self.sub_label.pack(expand=True, fill=tk.BOTH, padx=12, pady=6)
@@ -673,7 +673,7 @@ class GameSubtitleTranslator:
 
         if self.engine_choice.get() == "local_argos":
             try:
-                import argostranslate.translate
+                import argostranslate.translate  # type: ignore[import-untyped]
                 installed = argostranslate.translate.get_installed_languages()
                 from_lang = next((l for l in installed if l.code == "en"), None)
                 to_lang = next((l for l in installed if l.code == "tr"), None)

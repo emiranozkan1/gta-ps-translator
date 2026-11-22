@@ -666,10 +666,10 @@ class GameSubtitleTranslator:
         return result
 
     def translation_loop(self):
-        import mss
+        import mss  # type: ignore[import-untyped]
         import numpy as np
-        from PIL import Image
-        from rapidocr_onnxruntime import RapidOCR
+        from PIL import Image  # type: ignore[import-untyped]
+        from rapidocr_onnxruntime import RapidOCR  # type: ignore[import-untyped]
 
         ocr = RapidOCR()
 
@@ -681,15 +681,15 @@ class GameSubtitleTranslator:
             try:
                 import argostranslate.translate  # type: ignore[import-untyped]
                 installed = argostranslate.translate.get_installed_languages()
-                from_lang = next((l for l in installed if l.code == "en"), None)
-                to_lang = next((l for l in installed if l.code == "tr"), None)
+                from_lang = next((lang for lang in installed if lang.code == "en"), None)
+                to_lang = next((lang for lang in installed if lang.code == "tr"), None)
                 if from_lang and to_lang:
                     argos_trans = from_lang.get_translation(to_lang)
             except Exception:
                 argos_trans = None
 
         if argos_trans is None:
-            from deep_translator import GoogleTranslator
+            from deep_translator import GoogleTranslator  # type: ignore[import-untyped]
             google_trans = GoogleTranslator(source='en', target='tr')
 
         consecutive_empty = 0  # Üst üste boş tarama sayacı

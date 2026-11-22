@@ -64,6 +64,9 @@ class GameSubtitleTranslator:
         # Pencere kapatıldığında tüm işlemleri temizle ve terminali de kapat
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # macOS Spaces / Full Screen ayarlarını ana pencereye de uygula
+        self.root.after(300, lambda: self._setup_overlay_window_native(self.root))
+
         # Arka planda yerel modelin kurulu olup olmadığını kontrol et
         threading.Thread(target=self.check_local_model, daemon=True).start()
 
@@ -398,17 +401,20 @@ class GameSubtitleTranslator:
     def _setup_overlay_window_native(self, window, exclude_from_capture=False):
         """macOS ve Windows üzerinde pencereyi oyun üstü (HUD / Game Overlay) moduna alır:
         1. Tam ekran oyunların (PS Remote Play) üzerinde görünmesini sağlar (FullScreenAuxiliary).
-        2. TÜM Space/masaüstlerinde görünür kılar (CanJoinAllSpaces) — hangi ekrana geçersen geç takip eder.
+        2. TÜM Space/masaüstlerinde sabit kalır (CanJoinAllSpaces | Stationary) — hangi ekrana geçersen geç ekranda çakılı kalır.
         3. Odak çalmaz ve controller/klavye kontrollerini engellemez.
         4. exclude_from_capture=True ise ekran yakalamadan gizlenir (sadece çeviri overlay'ı için)."""
         if sys.platform == "darwin":
             try:
                 window.update_idletasks()
+                window.update()
                 import AppKit  # type: ignore[import-untyped]
 
-                # CanJoinAllSpaces (1) | FullScreenAuxiliary (256) | IgnoresCycle (64) = 321
+                # CanJoinAllSpaces (1) | Stationary (16) | FullScreenAuxiliary (256) | IgnoresCycle (64) = 337
+                # Stationary (16) bayrağı: macOS Spaces geçişi sırasında pencerenin ekranda sabit kalmasını sağlar!
                 behavior = (
                     AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces
+                    | AppKit.NSWindowCollectionBehaviorStationary
                     | AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
                     | AppKit.NSWindowCollectionBehaviorIgnoresCycle
                 )
@@ -422,15 +428,25 @@ class GameSubtitleTranslator:
                 ns_app = AppKit.NSApplication.sharedApplication()
                 for w in ns_app.windows():
                     w_title = w.title()
-                    if (target_title and w_title == target_title) or (not target_title and w.isVisible()):
-                        # 1. TÜM Space / Masaüstü / FullScreen ekranlarında görünür kıl
+                    match = False
+                    if target_title and w_title == target_title:
+                        match = True
+                    elif not target_title and w.isVisible():
+                        match = True
+                    if w_title == "__GTA_OVERLAY__":
+                        match = True
+
+                    if match:
+                        # 1. TÜM Space / Masaüstü / FullScreen ekranlarında çakılı kıl
                         w.setCollectionBehavior_(behavior)
                         # 2. Seviyeyi en üste çıkart (101: NSPopUpMenuWindowLevel - her şeyin üstünde)
                         w.setLevel_(AppKit.NSPopUpMenuWindowLevel)
-                        # 3. Odak başka uygulamaya geçtiğinde ASLA gizlenme
+                        # 3. Odak başka uygulamaya (Antigravity, PS Remote Play) geçtiğinde ASLA gizlenme
                         if hasattr(w, "setHidesOnDeactivate_"):
                             w.setHidesOnDeactivate_(False)
-                        # 4. Kullanıcı başka bir ekrana/uygulamaya geçtiğinde bile en öne çiz
+                        if hasattr(w, "setCanHide_"):
+                            w.setCanHide_(False)
+                        # 4. Kullanıcı başka bir ekrana geçtiğinde bile en öne çiz
                         if hasattr(w, "orderFrontRegardless"):
                             w.orderFrontRegardless()
                         # 5. Sadece çeviri overlay'ı ekran yakalamadan gizle
@@ -523,8 +539,8 @@ class GameSubtitleTranslator:
         # Başlangıçta tamamen görünmez — yazı algılanana kadar hiçbir şey görünmez
         self.overlay.attributes("-alpha", 0.0)
         self.overlay.config(background="#111111")
-        # Başlangıç boyutu minimal (ekranda hiçbir kutu görünmez)
-        self.overlay.geometry("1x1+0+0")
+        # Overlay penceresini baştan doğru koordinatlara yerleştir (alpha=0.0 ile görünmez)
+        self.overlay.geometry(f"{self.overlay_pos['width']}x{self.overlay_pos['height']}+{self.overlay_pos['left']}+{self.overlay_pos['top']}")
 
         self.sub_label = tk.Label(
             self.overlay, 
@@ -536,7 +552,8 @@ class GameSubtitleTranslator:
         )
         self.sub_label.pack(expand=True, fill=tk.BOTH, padx=12, pady=6)
 
-        # macOS Spaces / Full Screen & Capture ayarları
+        # Pencereyi Cocoa ile senkronize et ve native Spaces/Stationary ayarlarını uygula
+        self.overlay.update()
         self._setup_overlay_window_native(self.overlay, exclude_from_capture=True)
         self.root.after(100, lambda: self._setup_overlay_window_native(self.overlay, exclude_from_capture=True))
 
